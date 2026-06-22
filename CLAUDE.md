@@ -32,7 +32,7 @@ Table: `scrape_runs`
 |---|---|---|
 | id | INTEGER | primary key |
 | started_at | TIMESTAMP | when scrape began |
-| finished_at | TIMESTAMP | when scrape completed (NULL if still running) |
+| finished_at | TIMESTAMP | set when a run ENDS — **including failed runs** (NULL only while still running) |
 | status | VARCHAR | 'completed', 'running', 'failed' |
 | listings_found | INTEGER | total listings seen |
 | listings_new | INTEGER | new listings added |
@@ -42,6 +42,11 @@ Table: `scrape_runs`
 
 Use this table for questions about when the last scrape ran, how many listings were found, etc.
 
+⚠️ **A failed run also writes `finished_at`** (status `failed`, 0 pages). The *latest* row is therefore
+NOT necessarily a successful scrape. For "when did the last scrape actually run / succeed", always
+filter `WHERE status = 'completed'`, or read the `last_successful_scrape` key from the `scraper_state`
+table (the scraper sets it only after a real, non-empty scrape). **Never report a `failed` run as "the last scrape."**
+
 ## System info
 
 For questions about scraping schedule, service status, logs, or code:
@@ -49,7 +54,8 @@ For questions about scraping schedule, service status, logs, or code:
 - Scraper code: `/home/avishay/apps/yad2-scraper-service/scraper.py`
 - Scraper log: `/home/avishay/apps/yad2-scraper-service/scraper.log`
 - Scrape interval: **3600 seconds (1 hour)** between full cycles
-- To find next scrape time: query `SELECT finished_at FROM scrape_runs ORDER BY id DESC LIMIT 1` — add 3600 seconds to get the next run time
+- Last **successful** scrape: `SELECT finished_at FROM scrape_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1` (or `SELECT value FROM scraper_state WHERE key = 'last_successful_scrape'`). Add 3600s for the next expected run. **Do NOT** use `ORDER BY id DESC LIMIT 1` without the `status` filter — that includes failed attempts and will misreport an outage as a successful scrape.
+- If the latest run is `failed` (e.g. `Cannot create initial session`), say the scraper is currently failing/offline — do not present it as a completed scrape.
 - API code: `/home/avishay/apps/yad2-scraper-service/api.py`
 - This bot's code: `/home/avishay/apps/whatsapp-sender/index.js`
 - Service logs: scraper.log, gunicorn.log, whatsapp.log all in their respective dirs
